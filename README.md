@@ -536,6 +536,10 @@ así que es seguro dejarlo abierto todo el día. Incluye:
 
 ## Automatizar la corrida diaria (para que "el bot se encargue de todo")
 
+Esta sección es para el bot de **acciones** (`run_live_once.py`, días hábiles, horario
+de mercado). Si buscas automatizar el **módulo cripto** (BTC/USDT y demás, 24/7, sin
+días hábiles), ve directo a "Módulo cripto (Binance) -> Automatizar" más abajo.
+
 ### Con un clic (recomendado)
 
 - **Mac**: doble clic en `install_daily_automation_mac.command` (requiere haber
@@ -751,14 +755,54 @@ por orden, `min_order_mxn`, que es una aproximación, no el mínimo real del exc
 una orden por debajo del mínimo real de Bitso simplemente será rechazada y se
 loggeará el error sin detener la corrida).
 
-### Automatizar
+### Automatizar (24/7 -- para que corra solo, todos los días, sin depender de un horario de mercado)
 
-Mismo patrón que el bot de acciones (ver sección de automatización más arriba) --
-agrega una línea a tu crontab/launchd/Task Scheduler apuntando a
-`scripts/run_crypto_live_once.py` en vez de `run_live_once.py`. Como cripto cotiza
-24/7, puedes correrlo más de una vez al día si quieres (ej. cada 6-12 horas) en vez de
-una sola corrida diaria -- ajusta la frecuencia según qué tan seguido quieres que
-rebalancee (más frecuencia = más turnover = más costos, no necesariamente mejor).
+#### Con un clic (recomendado)
+
+- **Mac**: doble clic en `install_crypto_automation_mac.command` (requiere haber
+  corrido `start_mac.command` al menos una vez antes).
+- **Windows**: doble clic en `install_crypto_automation_windows.bat` (requiere haber
+  corrido `start_windows.bat` al menos una vez antes).
+
+Instala DOS tareas programadas, igual que el instalador del bot de acciones pero SIN
+restricción de día hábil (cripto cotiza 365 días al año, no hay fin de semana): una
+diaria (00:10, hora local -- ajustable) que calcula la señal y rebalancea, y una
+semanal (sábados 8:15am) que re-corre `run_crypto_backtest.py` para refrescar el
+dashboard y las bandas de alerta. **Por seguridad, quedan instaladas en modo
+SIMULACIÓN (broker virtual, dry-run) por defecto** -- el instalador explica al final
+exactamente qué agregar para pasar a paper trading real contra Binance testnet.
+
+#### Por qué una corrida diaria alcanza (y qué significa "24/7" acá)
+
+Las 3 estrategias (momentum, mean reversion, rotación) se calculan sobre velas
+**diarias** -- correr `run_crypto_live_once.py` varias veces el mismo día antes de que
+cierre la vela siguiente recalcula exactamente los mismos pesos objetivo, así que no
+gana nada (aparte de golpear la API de Binance más de lo necesario). "24/7" acá
+significa que el bot corre **todos los días del año sin pausa** (a diferencia de
+acciones, que solo corre en días hábiles) -- no que rebalancee cada hora.
+
+**Limitación honesta:** la guardia de drawdown y el filtro de régimen (ambos
+proactivos, ver `src/tracking.py`/`src/regime.py`) solo se evalúan cuando el script
+corre -- con una sola corrida diaria, un mal movimiento de precio a medio día no
+dispara la protección hasta la siguiente corrida. Si quieres que reaccione más rápido
+a movimientos intradía, puedes programar corridas adicionales (ej. cada 6 horas, vía
+un segundo trigger apuntando al mismo script) -- eso SÍ tiene un efecto real (revisa
+antes el drawdown a medio camino, no solo al cierre del día), a cambio de más llamadas
+a la API y, si activas `--execute`, potencialmente más turnover/costos si los pesos
+objetivo cambiaron entre corridas por una vela nueva.
+
+#### Manual (si prefieres no usar los instaladores, o usas Linux)
+
+Mismo patrón que el bot de acciones (ver la sección de automatización de acciones más
+arriba) -- agrega una línea a tu crontab/launchd/Task Scheduler apuntando a
+`scripts/run_crypto_live_once.py` en vez de `run_live_once.py`, SIN el filtro de día
+hábil (`1-5` en cron, `MON,TUE,WED,THU,FRI` en Task Scheduler, o el arreglo de
+`Weekday` en el `.plist` de launchd) que sí tiene la versión de acciones:
+
+```
+# cron (Mac/Linux), corre todos los días a las 00:10:
+10 0 * * * cd /ruta/a/trading-bot && venv/bin/python scripts/run_crypto_live_once.py --execute >> reports_crypto/live.log 2>&1
+```
 
 ### Diferencia importante con el bot de acciones: sesgo de "supervivencia" cripto
 
@@ -827,8 +871,10 @@ del backtest, solo qué tan rápido/seguro se llega a él):
 trading-bot/
   start_mac.command                            # doble clic: instala todo + abre el dashboard (Mac)
   start_windows.bat                             # lo mismo, Windows
-  install_daily_automation_mac.command           # doble clic: instala la automatización diaria/semanal (Mac)
+  install_daily_automation_mac.command           # doble clic: instala la automatización diaria/semanal (Mac, acciones)
   install_daily_automation_windows.bat            # lo mismo, Windows
+  install_crypto_automation_mac.command          # doble clic: automatización 24/7 del módulo cripto (Mac)
+  install_crypto_automation_windows.bat           # lo mismo, Windows
   config/
     universe.yaml         # qué activos operar (incluye leveraged_etfs, international_etfs, diversifier_etfs)
     live_params.yaml       # perfil conservador (default) -- riesgo/costos/régimen, vivo Y backtest
