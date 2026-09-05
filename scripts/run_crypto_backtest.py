@@ -67,6 +67,20 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1),
                          help="Núcleos para paralelizar el walk-forward (default: todos menos uno).")
+    parser.add_argument("--vol-target-max-exposure", type=float, default=None,
+                         help="Diagnóstico/A-B: sobreescribe portfolio_vol_target.max_gross_exposure "
+                              "(config/crypto_live_params.yaml, default: 1.0) SOLO para esta corrida. "
+                              "Con 1.0 el overlay de vol-targeting del ensamble SOLO puede reducir "
+                              "exposición, nunca aumentarla -- si la volatilidad realizada del ensamble "
+                              "ya corre por debajo del objetivo (revisa 'ann_vol' de "
+                              "ENSEMBLE_OOS_dynamic_alloc en summary.csv contra "
+                              "portfolio_vol_target.vol_target), el overlay queda inerte y "
+                              "ENSEMBLE_OOS_dynamic_alloc_vol_target sale idéntico a "
+                              "ENSEMBLE_OOS_dynamic_alloc. Un valor >1.0 simula apalancamiento adicional "
+                              "-- en cripto esto es MUCHO más riesgoso que en acciones (revisa el "
+                              "max_drawdown resultante contra el de BTC buy-and-hold en el mismo reporte "
+                              "antes de considerar usarlo en vivo). No cambia config/crypto_live_params.yaml "
+                              "ni el bot en vivo.")
     args = parser.parse_args()
 
     universe = load_crypto_universe()
@@ -218,11 +232,16 @@ def main():
 
     # ---------- Vol-targeting a nivel de portafolio (overlay sobre el ensamble dinámico) ----------
     pvt_cfg = live_params.get("portfolio_vol_target", {})
+    max_gross_exposure = pvt_cfg.get("max_gross_exposure", 1.0)
+    if args.vol_target_max_exposure is not None:
+        max_gross_exposure = args.vol_target_max_exposure
+        print(f"--vol-target-max-exposure: max_gross_exposure sobreescrito a {max_gross_exposure} "
+              f"(config real: {pvt_cfg.get('max_gross_exposure', 1.0)}) -- solo para esta corrida de diagnóstico.")
     if pvt_cfg.get("enabled", True):
         ensemble_oos_vol_target = apply_portfolio_vol_target(
             ensemble_oos_dynamic, vol_target=pvt_cfg.get("vol_target", 0.20),
             vol_lookback=pvt_cfg.get("vol_lookback", 20),
-            max_gross_exposure=pvt_cfg.get("max_gross_exposure", 1.0),
+            max_gross_exposure=max_gross_exposure,
             periods_per_year=periods_per_year,
         )
     else:

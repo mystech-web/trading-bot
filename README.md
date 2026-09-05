@@ -336,6 +336,7 @@ python tests/integration_smoke.py        # corre scripts/run_backtest.py complet
 python tests/live_smoke.py               # valida run_live_once.py + AlpacaBroker con un broker falso
 python tests/crypto_smoke_test.py        # ídem, módulo cripto
 python tests/crypto_integration_smoke.py # corre run_crypto_backtest.py completo, de punta a punta
+python tests/crypto_vol_target_max_exposure_test.py # valida el flag de diagnóstico (módulo cripto)
 python tests/crypto_live_smoke.py        # valida run_crypto_live_once.py + BinanceBroker
 python tests/bitso_live_smoke.py         # valida BitsoBroker (firmado HMAC, mapeo de símbolos, órdenes)
 python tests/data_incremental_test.py    # valida la descarga incremental (acciones y cripto)
@@ -722,8 +723,20 @@ definido -- consulta a tu contador).
 
 ```bash
 python scripts/run_crypto_backtest.py       # backtest completo con datos reales de Binance
+python scripts/run_crypto_backtest.py --vol-target-max-exposure 1.5   # diagnóstico, ver nota abajo
 streamlit run dashboard.py                   # selector de perfil -> "🪙 Cripto (Binance)"
 ```
+
+`--vol-target-max-exposure` (mismo mecanismo que en el bot de acciones, ver la sección
+de flags de diagnóstico más arriba): sobreescribe `portfolio_vol_target.max_gross_exposure`
+(`config/crypto_live_params.yaml`, default real: 1.0) solo para esa corrida. Si
+`ENSEMBLE_OOS_dynamic_alloc_vol_target` sale idéntico a `ENSEMBLE_OOS_dynamic_alloc` en
+tu `summary.csv`, es la misma señal que en acciones: el overlay está inerte porque la
+volatilidad realizada corre por debajo del `vol_target` (20%) configurado. **Antes de
+subir esto de verdad**, ten en cuenta que apalancar cripto es una categoría de riesgo
+bastante más seria que apalancar el ensamble de acciones -- compara el `max_drawdown`
+resultante contra el de `benchmark_BTCUSDT_buy_hold` en el mismo reporte (históricamente
+arriba de -70%) antes de considerar llevarlo a `config/crypto_live_params.yaml`.
 
 Genera el mismo tipo de reporte honesto que el bot de acciones (walk-forward, Monte
 Carlo, estabilidad de parámetros) pero con stress test contra crashes **cripto**
@@ -920,6 +933,7 @@ trading-bot/
     live_smoke.py                              # valida run_live_once.py + broker, sin red
     crypto_smoke_test.py                        # ídem, módulo cripto
     crypto_integration_smoke.py                  # corre run_crypto_backtest.py completo, sintético
+    crypto_vol_target_max_exposure_test.py        # valida el flag de diagnóstico (módulo cripto)
     crypto_live_smoke.py                          # valida run_crypto_live_once.py + BinanceBroker, sin red
     bitso_live_smoke.py                            # valida BitsoBroker (firmado HMAC, mapeo, órdenes), sin red
     data_incremental_test.py                         # valida la descarga incremental (acciones y cripto)
