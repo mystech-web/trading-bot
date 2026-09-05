@@ -1,0 +1,70 @@
+# Universo mixto: ETFs amplios + ETFs sectoriales + acciones líquidas del S&P 500.
+# Se eligen activos líquidos con historial completo de 10+ años para evitar sesgo de supervivencia parcial.
+
+broad_etfs:
+  - SPY   # S&P 500
+  - QQQ   # Nasdaq 100
+  - IWM   # Russell 2000
+  - TLT   # Bonos largo plazo (cobertura / diversificación)
+  - GLD   # Oro (cobertura)
+
+sector_etfs:      # usados por la estrategia de rotación sectorial
+  - XLK   # Tecnología
+  - XLF   # Financiero
+  - XLE   # Energía
+  - XLV   # Salud
+  - XLY   # Consumo discrecional
+  - XLP   # Consumo básico
+  - XLI   # Industrial
+  - XLU   # Utilities
+  - XLB   # Materiales
+
+# Diversificación internacional: sin esto, todo el universo (broad_etfs,
+# sector_etfs, liquid_stocks) es 100% mercado de EE.UU. -- un solo país, una
+# sola moneda. EFA y EEM son los ETFs internacionales más líquidos y con más
+# historial (desde 2001 y 2003 respectivamente, ambos cubren de sobra los 10+
+# años de análisis + calentamiento). Se agregan al universo de momentum y
+# mean_reversion (ver scripts/run_backtest.py -> base_universe), NO al de
+# sector_rotation (que es específicamente rotación entre SECTORES de EE.UU.).
+international_etfs:
+  - EFA   # iShares MSCI EAFE -- mercados desarrollados ex EE.UU./Canadá (Europa, Japón, Australia...)
+  - EEM   # iShares MSCI Emerging Markets -- mercados emergentes (China, India, Brasil...)
+
+# Diversificadores por CLASE DE ACTIVO (no solo geografía): TLT/GLD en broad_etfs
+# ya cubren bonos largos y oro, pero real estate y commodities amplios son
+# factores de riesgo genuinamente distintos de "más acciones" -- no son solo
+# otra variación de renta variable. IEF (bonos 7-10 años) complementa a TLT
+# (20+ años): duración más corta, menos sensible a un salto de tasas largas.
+# Todos con historial de sobra para los 10+ años de análisis + calentamiento
+# (VNQ desde 2004, DBC desde 2006, IEF desde 2002).
+diversifier_etfs:
+  - VNQ   # Vanguard Real Estate -- REITs de EE.UU.
+  - DBC   # Invesco DB Commodity Index -- canasta amplia de commodities (energía, metales, agro)
+  - IEF   # iShares 7-10 Year Treasury -- bonos de duración intermedia
+
+cash_proxy: BIL    # T-Bills 1-3m, usado como filtro de "momentum absoluto" y refugio
+
+liquid_stocks:
+  - AAPL
+  - MSFT
+  - GOOGL
+  - AMZN
+  - NVDA
+  - JPM
+  - JNJ
+  - V
+  - PG
+  - HD
+
+# Solo se usan si el perfil de riesgo activo tiene `include_leveraged_etfs: true`
+# (ver config/live_params_aggressive.yaml). ETFs apalancados 3x: amplifican tendencias
+# fuertes pero también las caídas, y sufren "decay" (pérdida de valor) en mercados
+# laterales/volátiles incluso si el subyacente termina plano. Úsalos con la estrategia
+# de momentum (tendencia), NUNCA con reversión a la media -- el decay las hace pésimas
+# para estrategias de idas y vueltas cortas.
+leveraged_etfs:
+  - TQQQ   # 3x Nasdaq-100
+  - SPXL   # 3x S&P 500
+  - SOXL   # 3x semiconductores
+
+benchmark: SPY

@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+data/cache/
+data/cache_crypto/
+.env
+reports/
+reports_aggressive/
+reports_crypto/
+*.png
+.DS_Store

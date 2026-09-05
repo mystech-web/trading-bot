@@ -1,0 +1,135 @@
+# ============================================================================
+# PERFIL AGRESIVO -- LEE ESTO ANTES DE USARLO
+# ============================================================================
+# Este perfil apunta a un retorno mensual más alto que config/live_params.yaml
+# (el perfil conservador) A CAMBIO DE mucho más riesgo: usa ETFs apalancados
+# 3x, tamaños de posición más grandes, y un objetivo de volatilidad 3 veces
+# mayor. Eso significa drawdowns proporcionalmente más grandes y más
+# probabilidad de una pérdida severa en un mal tramo de mercado.
+#
+# NO es "el mismo bot pero mejor". Es una categoría de riesgo distinta.
+#
+# Antes de usarlo en paper trading, corre:
+#   python scripts/run_backtest.py --profile aggressive
+# y mira el Monte Carlo y el stress test en el dashboard (selecciona "Agresivo"
+# en el selector de perfil) -- compara el drawdown p95 (peor caso) contra el
+# perfil conservador antes de decidir si aceptas ese riesgo.
+#
+# NUNCA lo uses con dinero real sin haberlo corrido en paper trading durante
+# varios meses Y sin entender exactamente qué significa cada parámetro de acá.
+# ============================================================================
+
+momentum:
+  fast: 50
+  slow: 200
+  vol_target: 0.30       # vs 0.10 en el perfil conservador -- 3x más volatilidad objetivo
+  vol_lookback: 20
+
+mean_reversion:
+  trend_sma: 200
+  entry_rsi: 10.0
+  exit_rsi: 70.0
+  max_hold_days: 10
+  stop_loss_pct: 0.06
+  max_concurrent_positions: 5
+  weight_per_position: 0.12
+  vol_lookback: 20
+  reference_vol: 0.15
+  # Nota: deliberadamente NO se le dan ETFs apalancados a mean_reversion (ver
+  # `include_leveraged_etfs` más abajo, que solo afecta a momentum) -- el "decay"
+  # de los apalancados es especialmente dañino para una estrategia de entradas y
+  # salidas cortas como esta.
+
+sector_rotation:
+  top_n: 2                  # más concentrado que el conservador (top_n: 3) = más riesgo/retorno potencial
+  max_weight_per_asset: 0.50
+
+allocation:
+  momentum: 0.55             # más peso a momentum, la estrategia que más se beneficia del apalancamiento en tendencias
+  mean_reversion: 0.15
+  sector_rotation: 0.30
+
+# `true` agrega TQQQ/SPXL/SOXL (ver config/universe.yaml -> leveraged_etfs) al
+# universo de la estrategia de MOMENTUM únicamente.
+include_leveraged_etfs: true
+
+# Ver config/live_params.yaml -- mismo hallazgo (EFA/EEM/VNQ/DBC/IEF diluían
+# avg_monthly_return), mismo default false. No probado específicamente en este
+# perfil todavía -- si lo activas, corre `python scripts/run_backtest.py
+# --profile aggressive --include-satellite` y compara antes de usarlo en vivo.
+include_satellite_etfs: false
+
+position_caps:
+  broad_etf: 0.30
+  sector_etf: 0.50
+  individual_stock: 0.12
+  leveraged_etf: 0.25
+  # Reducidos de 0.20 a 0.12 (tamaño satélite, ver config/live_params.yaml para el
+  # detalle): un backtest real mostró que con topes cercanos a broad_etf, EFA/EEM/
+  # VNQ/DBC/IEF diluían el retorno mensual promedio del ensamble.
+  international_etf: 0.12
+  diversifier_etf: 0.12
+
+# El filtro de régimen macro es la protección MÁS importante en este perfil --
+# con apalancamiento 3x, un bear market prolongado sin este filtro sería
+# devastador. Se mantiene igual de estricto que en el conservador a propósito.
+regime_filter:
+  enabled: true
+  sma_window: 200
+  full_exposure_above_pct: 0.0
+  floor_below_pct: -0.15
+  min_scale: 0.40
+
+costs:
+  use_liquidity_costs: true
+  base_capital: 100000
+  base_spread_bps: 4.0       # los apalancados suelen tener spreads algo más anchos
+  impact_coeff: 20.0
+  max_cost_bps: 60.0
+
+tax:
+  estimate_enabled: true
+  short_term_rate: 0.35
+  # Ver config/live_params.yaml -- mismo mecanismo de tax-loss harvesting, opt-in.
+  harvest_losses_enabled: false
+  harvest_loss_threshold_pct: -0.05
+  wash_sale_days: 31
+
+execution:
+  max_slippage_pct: 0.008     # algo más de tolerancia por la mayor volatilidad intradía
+  min_weight_drift: 0.02      # banda de no-operación -- ver comentario en config/live_params.yaml
+  # Ver config/live_params.yaml -- mismo mecanismo de división de órdenes tipo TWAP.
+  twap_threshold_usd: 5000.0
+  twap_max_slices: 5
+  twap_slice_delay_sec: 3.0
+
+portfolio_vol_target:
+  enabled: true
+  vol_target: 0.30            # coherente con el vol_target 3x de momentum arriba
+  vol_lookback: 20
+  # Se mantiene en 1.0 a propósito (a diferencia del perfil conservador, ver
+  # config/live_params.yaml): este perfil YA usa ETFs apalancados 3x -- combinar
+  # eso con margen adicional aquí no se ha probado y podría componer riesgo de
+  # forma no obvia. No lo subas sin correr el backtest y revisar el stress test.
+  max_gross_exposure: 1.0
+
+# Ver config/live_params.yaml -- mismo mecanismo de barrido de cash + topes
+# dinámicos por correlación (src/portfolio_overlays.py).
+portfolio_overlays:
+  cash_sweep_enabled: true
+  dynamic_caps_enabled: true
+  corr_window: 60
+  full_cap_below: 0.3
+  floor_above: 0.7
+  min_scale: 0.6
+  ramp_in_enabled: true
+  ramp_max_daily_increase: 0.02
+
+# Ver config/live_params.yaml -- mismo mecanismo de blackout de FOMC/earnings
+# (src/event_blackout.py). Con apalancamiento 3x, un gap por evento binario
+# duele el triple -- congelar/evitar esos días importa más acá, no menos.
+event_blackout:
+  fomc_blackout_enabled: true
+  earnings_blackout_enabled: true
+  earnings_blackout_days_before: 1
+  earnings_blackout_days_after: 1

@@ -1,0 +1,26 @@
+# Universo cripto (pares contra USDT en Binance). A diferencia del universo de
+# acciones, aquí no hay ETFs/sectores -- se separan en "majors" (BTC/ETH, menor
+# volatilidad relativa, mayor liquidez) y "altcoins" (mayor volatilidad,
+# usadas también en la rotación tipo "sector rotation").
+#
+# quote_currency (USDT) actúa como "cash": no se descarga de Binance, se
+# construye como una serie sintética plana (ver src/crypto_data.py) para poder
+# usar el mismo filtro de "momentum absoluto" que en el bot de acciones (BIL).
+
+majors:
+  - BTCUSDT
+  - ETHUSDT
+
+altcoins:
+  - BNBUSDT
+  - SOLUSDT
+  - XRPUSDT
+  - ADAUSDT
+  - LINKUSDT
+  - AVAXUSDT
+  - LTCUSDT
+  - DOTUSDT
+
+quote_currency: USDT   # "cash" -- serie sintética plana, no se descarga
+
+benchmark: BTCUSDT

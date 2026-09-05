@@ -1,0 +1,12 @@
+yfinance>=1.7.0
+pandas>=2.2
+numpy>=1.26
+matplotlib>=3.8
+python-dotenv>=1.0
+pyyaml>=6.0
+alpaca-py>=0.44.0
+streamlit>=1.38
+plotly>=5.24
+requests>=2.31
+python-binance>=1.0.19
+numba>=0.60  # opcional: acelera el loop de mean_reversion.py. Si falla instalar, el bot igual funciona (más lento).

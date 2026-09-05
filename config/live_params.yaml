@@ -1,0 +1,164 @@
+# Parámetros usados en vivo (paper trading). No se re-optimizan automáticamente
+# en cada corrida -- eso sería "overfitting continuo". Actualízalos manualmente,
+# a lo sumo cada 3-6 meses, revisando qué parámetros ganó cada fold reciente en
+# `python scripts/run_backtest.py` (ver reports/param_stability_*.csv).
+
+momentum:
+  fast: 50
+  slow: 200
+  vol_target: 0.10
+  vol_lookback: 20
+
+mean_reversion:
+  trend_sma: 200
+  entry_rsi: 10.0
+  exit_rsi: 70.0
+  max_hold_days: 10
+  stop_loss_pct: 0.06
+  max_concurrent_positions: 5
+  weight_per_position: 0.10
+  vol_lookback: 20
+  reference_vol: 0.15
+
+sector_rotation:
+  top_n: 3
+  max_weight_per_asset: 0.40
+
+allocation:
+  momentum: 0.35
+  mean_reversion: 0.25
+  sector_rotation: 0.40
+
+# `false` (default): EFA/EEM/VNQ/DBC/IEF (ver config/universe.yaml -> international_etfs/
+# diversifier_etfs) quedan FUERA de momentum/mean_reversion. Un backtest real (2015-2026,
+# walk-forward) mostró que, aun con un tope de posición chico (ver position_caps abajo),
+# esos 5 tickers diluían avg_monthly_return del ensamble por debajo del 0.5% objetivo --
+# probablemente por selección/ranking dentro de momentum/mean_reversion, no solo tamaño de
+# posición (reducir el tope a la mitad casi no cambió el resultado; sacarlos sí). Si
+# prefieres esa diversificación geográfica/de clase de activo a cambio de algo de retorno,
+# pon esto en `true` -- pero corre `python scripts/run_backtest.py --include-satellite`
+# primero y compara avg_monthly_return en reports/summary.csv antes de decidir.
+include_satellite_etfs: false
+
+# Topes de peso por TIPO de activo (no por parámetro de estrategia) -- las acciones
+# individuales llevan un tope más bajo que los ETFs porque el universo de hoy tiene
+# sesgo de supervivencia (son las empresas que SÍ sobrevivieron los últimos 10 años;
+# ver README, sección "Sesgo de supervivencia"). Reduce cuánto puede concentrarse el
+# portafolio en un solo nombre individual.
+position_caps:
+  broad_etf: 0.20
+  sector_etf: 0.40
+  individual_stock: 0.08
+  # Solo aplican si activas include_satellite_etfs arriba -- tamaño "satélite" (a la
+  # par de individual_stock, no de broad_etf) para cuando SÍ se usan.
+  international_etf: 0.08   # EFA/EEM (ver config/universe.yaml)
+  diversifier_etf: 0.08     # VNQ/DBC/IEF (ver config/universe.yaml) -- REITs, commodities, bonos intermedios
+
+# Filtro de régimen macro (proactivo, ver src/regime.py): reduce la exposición de
+# TODO el portafolio suavemente cuando el benchmark cae bajo su media de 200 días.
+regime_filter:
+  enabled: true
+  sma_window: 200
+  full_exposure_above_pct: 0.0
+  floor_below_pct: -0.15
+  min_scale: 0.40
+
+# Modelo de costos sensible a liquidez (ver src/costs.py).
+costs:
+  use_liquidity_costs: true
+  base_capital: 100000
+  base_spread_bps: 3.0
+  impact_coeff: 15.0
+  max_cost_bps: 50.0
+
+# Estimación (aproximada) de drag fiscal -- ver src/tax.py. No aplica si operas
+# dentro de una cuenta con ventajas fiscales.
+tax:
+  estimate_enabled: true
+  short_term_rate: 0.35
+  # Tax-loss harvesting automático (opt-in, ver src/tax_loss_harvesting.py) -- solo
+  # funciona con --broker virtual o alpaca (Binance/Bitso no exponen cost basis).
+  # false por default: vende posiciones para realizar pérdidas fiscales, lo cual
+  # cambia el comportamiento normal del bot -- actívalo conscientemente, no como
+  # default silencioso, y confirma el tratamiento fiscal con tu contador.
+  harvest_losses_enabled: false
+  harvest_loss_threshold_pct: -0.05   # cosecha posiciones con pérdida no realizada >= 5%
+  wash_sale_days: 31                  # no recompra el mismo ticker por esta cantidad de días tras cosecharlo
+
+# Vol-targeting a nivel de PORTAFOLIO completo (ver src/ensemble.py ->
+# apply_portfolio_vol_target) -- cada estrategia individual ya apunta a su
+# propia volatilidad objetivo, esto es un overlay ADICIONAL sobre el ensamble
+# ya combinado, por si las 3 coinciden en modo agresivo al mismo tiempo.
+portfolio_vol_target:
+  enabled: true
+  vol_target: 0.10
+  vol_lookback: 20
+  # ATENCIÓN -- ESTO ES APALANCAMIENTO REAL, LÉELO ANTES DE TOCARLO:
+  # `raw_scale = (vol_target / volatilidad_realizada) recortado arriba en max_gross_exposure`
+  # -- con 1.0 el overlay SOLO puede reducir exposición, nunca aumentarla por encima de
+  # 100% del capital. Un backtest real mostró que la volatilidad realizada del ensamble
+  # corría bien por debajo del 10% objetivo de arriba (~5.5% vs 10%), es decir, había
+  # margen de riesgo "permitido" por vol_target que nunca se usaba -- subir este tope a
+  # 1.3 (apalancamiento de hasta 30% adicional, vía margen) dejó que el overlay lo
+  # aproveche, y avg_monthly_return del ensamble cruzó el objetivo de 0.5-2%/mes (con
+  # Sharpe/Calmar mejores, pero max_drawdown algo mayor -- ver reports/summary.csv).
+  # En vivo esto SOLO funciona si tu cuenta de Alpaca tiene margen habilitado (paga
+  # interés) y significa que en un mal tramo de mercado el drawdown real puede ser
+  # MAYOR al del backtest. Si prefieres no usar margen, vuelve esto a 1.0 -- con
+  # include_satellite_etfs en false eso ya acerca bastante el retorno al objetivo
+  # (~0.42-0.47%/mes) sin apalancamiento real.
+  max_gross_exposure: 1.3
+
+# Slippage máximo tolerado en las órdenes límite de ejecución en vivo (ver
+# src/live/alpaca_broker.py). min_weight_drift es la banda de no-operación: no
+# rebalancea un ticker si su peso actual ya está a menos de esa fracción del
+# objetivo (0.02 = 2 puntos porcentuales), sin importar el monto en dólares --
+# evita turnover/costos/impuestos por diferencias de peso irrelevantes.
+execution:
+  max_slippage_pct: 0.005
+  min_weight_drift: 0.02
+  # División de órdenes grandes tipo TWAP (solo --broker alpaca, ver
+  # src/live/alpaca_broker.py): una orden con monto por encima de
+  # twap_threshold_usd se divide en hasta twap_max_slices porciones, enviadas
+  # en secuencia con twap_slice_delay_sec de pausa entre cada una, en vez de
+  # una sola orden grande de una vez -- reduce el impacto de mercado.
+  twap_threshold_usd: 5000.0
+  twap_max_slices: 5
+  twap_slice_delay_sec: 3.0
+
+# Overlays aplicados a los pesos de CADA estrategia antes del backtest/combinación
+# (ver src/portfolio_overlays.py):
+#   - cash_sweep_enabled: el capital que una estrategia deja sin invertir (menos
+#     activos en tendencia de los que caben, vol-targeting, sector_rotation en
+#     modo "cash") se barre hacia el proxy de cash (BIL) en vez de ganar 0%.
+#   - dynamic_caps_enabled: cuando el universo entero se mueve muy correlacionado
+#     (poca diversificación real), aprieta los topes de posición (position_caps)
+#     más allá de lo estático -- full_cap_below/floor_above/min_scale funcionan
+#     igual que en regime_filter (interpolación lineal entre dos umbrales).
+portfolio_overlays:
+  cash_sweep_enabled: true
+  dynamic_caps_enabled: true
+  corr_window: 60
+  full_cap_below: 0.3
+  floor_above: 0.7
+  min_scale: 0.6
+  # ramp_in_enabled: entra a una posición nueva o creciente en varios días en
+  # vez de todo de una vez (las bajadas de peso siempre son instantáneas).
+  # ramp_max_daily_increase: máximo aumento de peso permitido por día, en
+  # puntos porcentuales (0.02 = 2pp/día -- una posición de 10% tarda ~5 días).
+  ramp_in_enabled: true
+  ramp_max_daily_increase: 0.02
+
+# Blackouts de eventos binarios conocidos (ver src/event_blackout.py):
+#   - fomc_blackout_enabled: el portafolio COMPLETO no rebalancea el día de una
+#     reunión de la Fed (fechas en config/macro_calendar.yaml -- revisa esa
+#     lista, es un punto de partida, no un calendario mantenido solo).
+#     Funciona en backtest Y en vivo.
+#   - earnings_blackout_enabled: acciones individuales, cerca de su reporte de
+#     resultados. SOLO EN VIVO (yfinance no da historial point-in-time, así que
+#     nunca aparece en el backtest -- una discrepancia real y documentada).
+event_blackout:
+  fomc_blackout_enabled: true
+  earnings_blackout_enabled: true
+  earnings_blackout_days_before: 1
+  earnings_blackout_days_after: 1

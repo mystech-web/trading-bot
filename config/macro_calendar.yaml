@@ -1,0 +1,34 @@
+# Fechas de eventos macro conocidos donde el bot NO rebalancea (ver
+# src/event_blackout.py -> freeze_weights_on_blackout_days): ese día mantiene
+# los pesos del día hábil anterior en vez de rebalancear sobre la volatilidad
+# anormal (y a veces ruidosa) de un evento binario conocido.
+#
+# IMPORTANTE -- LISTA DE PARTIDA, NO UNA FUENTE DE VERDAD MANTENIDA SOLA:
+# estas son las fechas de anuncio de decisión de tasas del FOMC (Reserva
+# Federal de EE.UU.), la reunión programada más relevante para el universo de
+# este bot (mayormente acciones/ETFs de EE.UU.). Cúbrelas y actualízalas
+# contra el calendario oficial antes de confiar en el backtest para medir su
+# efecto histórico completo:
+#   https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+#
+# Una fecha faltante simplemente NO aplica el blackout ese día -- no rompe
+# nada, solo deja cobertura incompleta si la lista quedó desactualizada.
+# Agrega fechas de 2026 en adelante a medida que la Fed las publique (suele
+# publicar el calendario del año siguiente hacia fin de año).
+fomc_decision_dates:
+  - "2024-01-31"
+  - "2024-03-20"
+  - "2024-05-01"
+  - "2024-06-12"
+  - "2024-07-31"
+  - "2024-09-18"
+  - "2024-11-07"
+  - "2024-12-18"
+  - "2025-01-29"
+  - "2025-03-19"
+  - "2025-05-07"
+  - "2025-06-18"
+  - "2025-07-30"
+  - "2025-09-17"
+  - "2025-10-29"
+  - "2025-12-10"
