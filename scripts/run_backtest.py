@@ -431,8 +431,11 @@ def main():
     print(f"  Probabilidad de que el promedio mensual sea NEGATIVO: "
           f"{mc['prob_avg_monthly_negative']*100:.1f}%")
     dd_p = mc["max_drawdown"]
-    print(f"  Máximo drawdown -- p5={dd_p['p5']*100:.1f}%  mediana={dd_p['p50']*100:.1f}%  "
-          f"p95(peor caso)={dd_p['p95']*100:.1f}%")
+    # El drawdown es negativo -- p5 (percentil 5, el número MÁS negativo) es el peor
+    # caso, no p95 (el menos negativo, el mejor caso). Antes esto decía "p95(peor
+    # caso)", exactamente al revés -- un error real de comunicación de riesgo.
+    print(f"  Máximo drawdown -- p5(peor caso)={dd_p['p5']*100:.1f}%  mediana={dd_p['p50']*100:.1f}%  "
+          f"p95(mejor caso)={dd_p['p95']*100:.1f}%")
 
     with open(REPORTS_DIR / "monte_carlo.json", "w") as f:
         json.dump(summary_for_json(mc), f, indent=2)

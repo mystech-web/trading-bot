@@ -670,7 +670,8 @@ que en el perfil conservador.
 
 1. `python scripts/run_backtest.py --profile aggressive`
 2. `streamlit run dashboard.py` → selector "🔴 Agresivo" → compara, contra el
-   conservador: el `max_drawdown` de `summary.csv`, el percentil p95 (peor caso) del
+   conservador: el `max_drawdown` de `summary.csv`, el percentil **p5** (peor caso --
+   el drawdown es negativo, así que el percentil MÁS BAJO es el peor, no p95) del
    Monte Carlo, y las columnas `_max_dd_%` del stress test en cada crash conocido.
 3. Si después de ver esos números todavía te parece un riesgo aceptable, corre
    `python scripts/run_live_once.py --profile aggressive` (dry-run) durante varias

@@ -342,8 +342,10 @@ def main():
           f"{mc['prob_avg_monthly_in_target_0.5_2pct']*100:.1f}%")
     print(f"  Probabilidad de que sea NEGATIVO: {mc['prob_avg_monthly_negative']*100:.1f}%")
     dd_p = mc["max_drawdown"]
-    print(f"  Máximo drawdown -- p5={dd_p['p5']*100:.1f}%  mediana={dd_p['p50']*100:.1f}%  "
-          f"p95(peor caso)={dd_p['p95']*100:.1f}%")
+    # Ver la misma nota en scripts/run_backtest.py: p5 (más negativo) es el peor
+    # caso, no p95 -- estaba al revés.
+    print(f"  Máximo drawdown -- p5(peor caso)={dd_p['p5']*100:.1f}%  mediana={dd_p['p50']*100:.1f}%  "
+          f"p95(mejor caso)={dd_p['p95']*100:.1f}%")
 
     with open(REPORTS_DIR / "monte_carlo.json", "w") as f:
         json.dump(summary_for_json(mc), f, indent=2)
