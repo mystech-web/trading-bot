@@ -841,6 +841,15 @@ del backtest, solo qué tan rápido/seguro se llega a él):
   pegan al caché existente sin duplicar fechas. Antes, cada corrida diaria bajaba
   de nuevo 10+ años de historia por cada ticker/símbolo; ahora son unos pocos días.
 
+- **El caché recuerda cuántos años cubre** (`{ticker}.years.json` junto a cada
+  `.parquet` en `data/cache/`/`data/cache_crypto/`) -- corrige un bug real: como
+  `run_live_once.py`/`run_crypto_live_once.py` piden solo `years=2` (les alcanza
+  con datos recientes) y `run_backtest.py`/`run_crypto_backtest.py` piden
+  `years=11`, correr primero el script en vivo dejaba un caché corto que el
+  backtest aceptaba tal cual sin avisar -- en una corrida real esto vació el
+  walk-forward por completo. Ahora, con `force=False`, el caché solo se usa si
+  cubre al menos los años pedidos; si no, se vuelve a descargar completo.
+
 - **`mean_reversion.py` acelerado con numba** (opcional, ver `requirements.txt`):
   esta estrategia es una "state machine" día a día (necesita saber si hay una
   posición abierta, cuánto lleva, si tocó el stop) que no se puede vectorizar con

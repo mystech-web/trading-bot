@@ -70,6 +70,59 @@ def test_equity_incremental_download(monkeypatch):
           f"{len(merged)} filas finales sin duplicados")
 
 
+def test_equity_cache_with_fewer_years_than_requested_is_not_trusted(monkeypatch):
+    """Regresión de un bug real: `run_live_once.py` pide `years=2` (solo necesita
+    datos recientes); si eso corre ANTES que `run_backtest.py` (pide `years=11`),
+    con la lógica vieja el backtest se quedaba con el caché corto de 2 años sin
+    avisar -- en una corrida real esto vació por completo el walk-forward
+    (`IndexError: list index out of range` al no haber folds). Ahora
+    `download_prices` debe notar que el caché no cubre los años pedidos y volver
+    a descargar completo."""
+    import src.data as data_mod
+
+    calls = {"full": 0, "since": 0}
+
+    def fake_full(ticker, period):
+        calls["full"] += 1
+        years_requested = int(period.rstrip("y"))
+        end = pd.Timestamp.now().normalize()
+        dates = pd.bdate_range(end - pd.Timedelta(days=years_requested * 365), end)
+        df = pd.DataFrame({"Close": np.linspace(100, 200, len(dates)), "Volume": 1e6}, index=dates)
+        df.index.name = "date"
+        return df
+
+    def fake_since(ticker, start):
+        calls["since"] += 1
+        return pd.DataFrame({"Close": [], "Volume": []})
+
+    monkeypatch.setattr(data_mod, "_download_full", fake_full)
+    monkeypatch.setattr(data_mod, "_download_since", fake_since)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        monkeypatch.setattr(data_mod, "CACHE_DIR", pathlib.Path(tmp))
+
+        # 1) Como run_live_once.py: pide solo 2 años.
+        out1 = data_mod.download_prices(["FAKE2"], years=2, force=False)
+        assert calls["full"] == 1
+        span_days_1 = (out1["FAKE2"].index.max() - out1["FAKE2"].index.min()).days
+        assert span_days_1 < 3 * 365, "el fixture debería haber generado ~2 años, no más"
+
+        # 2) Como run_backtest.py: pide 11 años, MISMO ticker, force=False -- con el
+        #    bug viejo esto devolvía el caché corto de 2 años tal cual (cero llamadas
+        #    de red adicionales). Ahora debe notar que no alcanza y re-descargar.
+        out2 = data_mod.download_prices(["FAKE2"], years=11, force=False)
+        assert calls["full"] == 2, "debería haber re-descargado completo al notar que el caché no cubría 11 años"
+        span_days_2 = (out2["FAKE2"].index.max() - out2["FAKE2"].index.min()).days
+        assert span_days_2 > 10 * 365, f"el resultado final debería cubrir ~11 años, cubrió {span_days_2} días"
+
+        # 3) Volver a pedir 11 años -- ahora sí debería confiar en el caché (ya lo cubre).
+        data_mod.download_prices(["FAKE2"], years=11, force=False)
+        assert calls["full"] == 2, "con el caché ya profundo, no debería volver a descargar"
+
+    print(f"  data.py: caché insuficiente (2 años) detectado y re-descargado al pedir 11 años "
+          f"({span_days_1} días -> {span_days_2} días)")
+
+
 def test_download_retries_transient_sqlite_lock_error():
     """Reproduce el bug real visto en producción: `yf.download` usa internamente
     una caché SQLite compartida entre tickers -- al descargar varios en paralelo
@@ -145,6 +198,49 @@ def test_crypto_incremental_download(monkeypatch):
           f"{len(merged)} filas finales sin duplicados")
 
 
+def test_crypto_cache_with_fewer_years_than_requested_is_not_trusted(monkeypatch):
+    """Misma regresión que test_equity_cache_with_fewer_years_than_requested_is_not_trusted,
+    pero para el módulo cripto -- este es el bug que realmente se vio en producción:
+    `run_crypto_live_once.py` (pide `years=2`) corrió antes que
+    `run_crypto_backtest.py` (pide `years=11`), y el backtest terminó con solo
+    ~2 años de datos sin ningún aviso (walk-forward vacío, `IndexError`)."""
+    import src.crypto_data as crypto_data_mod
+
+    calls = {"full": 0}
+
+    def fake_download_klines(symbol, years=11, interval="1d", since=None):
+        assert since is None, "este test no ejercita la ruta incremental"
+        calls["full"] += 1
+        end = pd.Timestamp.now().normalize()
+        dates = pd.date_range(end - pd.Timedelta(days=years * 365), end, freq="D")
+        return pd.DataFrame({"Close": np.linspace(10, 20, len(dates)), "Volume": 1e5,
+                              "QuoteVolume": 1e6}, index=dates)
+
+    monkeypatch.setattr(crypto_data_mod, "download_klines", fake_download_klines)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        monkeypatch.setattr(crypto_data_mod, "CACHE_DIR", pathlib.Path(tmp))
+
+        # 1) Como run_crypto_live_once.py: pide solo 2 años.
+        out1 = crypto_data_mod.download_prices(["FAKE2USDT"], years=2, force=False)
+        assert calls["full"] == 1
+        span_days_1 = (out1["FAKE2USDT"].index.max() - out1["FAKE2USDT"].index.min()).days
+        assert span_days_1 < 3 * 365
+
+        # 2) Como run_crypto_backtest.py: pide 11 años, MISMO símbolo, force=False.
+        out2 = crypto_data_mod.download_prices(["FAKE2USDT"], years=11, force=False)
+        assert calls["full"] == 2, "debería haber re-descargado completo al notar que el caché no cubría 11 años"
+        span_days_2 = (out2["FAKE2USDT"].index.max() - out2["FAKE2USDT"].index.min()).days
+        assert span_days_2 > 10 * 365, f"el resultado final debería cubrir ~11 años, cubrió {span_days_2} días"
+
+        # 3) Volver a pedir 11 años -- ahora sí debería confiar en el caché.
+        crypto_data_mod.download_prices(["FAKE2USDT"], years=11, force=False)
+        assert calls["full"] == 2, "con el caché ya profundo, no debería volver a descargar"
+
+    print(f"  crypto_data.py: caché insuficiente (2 años) detectado y re-descargado al pedir 11 años "
+          f"({span_days_1} días -> {span_days_2} días)")
+
+
 class _MonkeyPatch:
     def __init__(self):
         self._orig = []
@@ -159,22 +255,36 @@ class _MonkeyPatch:
 
 
 def main():
-    print("[1/3] Probando descarga incremental de acciones (src.data)...")
+    print("[1/5] Probando descarga incremental de acciones (src.data)...")
     mp1 = _MonkeyPatch()
     try:
         test_equity_incremental_download(mp1)
     finally:
         mp1.undo()
 
-    print("\n[2/3] Probando reintento ante 'database is locked' transitorio de yfinance...")
+    print("\n[2/5] Probando que un caché con menos años de los pedidos se re-descarga (acciones)...")
+    mp1b = _MonkeyPatch()
+    try:
+        test_equity_cache_with_fewer_years_than_requested_is_not_trusted(mp1b)
+    finally:
+        mp1b.undo()
+
+    print("\n[3/5] Probando reintento ante 'database is locked' transitorio de yfinance...")
     test_download_retries_transient_sqlite_lock_error()
 
-    print("\n[3/3] Probando descarga incremental de cripto (src.crypto_data)...")
+    print("\n[4/5] Probando descarga incremental de cripto (src.crypto_data)...")
     mp2 = _MonkeyPatch()
     try:
         test_crypto_incremental_download(mp2)
     finally:
         mp2.undo()
+
+    print("\n[5/5] Probando que un caché con menos años de los pedidos se re-descarga (cripto)...")
+    mp2b = _MonkeyPatch()
+    try:
+        test_crypto_cache_with_fewer_years_than_requested_is_not_trusted(mp2b)
+    finally:
+        mp2b.undo()
 
     print("\nDATA INCREMENTAL TEST OK: la descarga incremental funciona correctamente en ambos módulos.")
 

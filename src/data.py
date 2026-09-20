@@ -1,6 +1,7 @@
 """Descarga y cachea datos históricos OHLCV con yfinance."""
 from __future__ import annotations
 
+import json
 import pathlib
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -98,6 +99,26 @@ def _download_since(ticker: str, start: pd.Timestamp) -> pd.DataFrame:
     return _with_retries(_do, ticker)
 
 
+def _years_meta_file(ticker: str) -> pathlib.Path:
+    return CACHE_DIR / f"{ticker}.years.json"
+
+
+def _read_years_covered(ticker: str) -> int | None:
+    """`None` si no hay metadata (caché de antes de este fix, o nunca escrita) --
+    tratar como cobertura desconocida, no como 0."""
+    meta_file = _years_meta_file(ticker)
+    if not meta_file.exists():
+        return None
+    try:
+        return json.loads(meta_file.read_text()).get("years")
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _write_years_covered(ticker: str, years: int) -> None:
+    _years_meta_file(ticker).write_text(json.dumps({"years": years}))
+
+
 def download_prices(tickers: Iterable[str], years: int = 11, force: bool = False,
                      max_workers: int = 8, incremental_overlap_days: int = 5) -> dict[str, pd.DataFrame]:
     """Descarga OHLCV ajustado por dividendos/splits para cada ticker. Cachea en parquet.
@@ -109,15 +130,28 @@ def download_prices(tickers: Iterable[str], years: int = 11, force: bool = False
     Tres casos, todos en paralelo entre sí (`max_workers` hilos, son llamadas de
     red no de CPU):
       - Ticker sin caché -> descarga completa (`years` atrás).
-      - Ticker en caché y `force=False` -> se lee del disco, cero llamadas de red.
+      - Ticker en caché y `force=False` -> se lee del disco SI cubre al menos
+        `years` (ver nota de bug real abajo); si no, se trata como sin caché.
       - Ticker en caché y `force=True` (el caso de todos los días en vivo) -> NO se
         vuelve a descargar la historia completa. Solo se piden los últimos días
         (desde el último dato en caché, con `incremental_overlap_days` de margen
         por si Yahoo revisa un cierre reciente) y se pegan al caché existente. Antes
         de esto, cada corrida diaria re-bajaba años de historia por cada ticker --
         de minutos a segundos.
+
+    IMPORTANTE (bug real que ya pasó, ver el equivalente en src/crypto_data.py):
+    con `force=False`, si el caché en disco llegaba a existir con MENOS años de
+    los que se piden ahora -- típicamente porque antes se corrió
+    `run_live_once.py` (pide `years=2`, solo necesita datos recientes) antes que
+    `run_backtest.py` (pide `years=11`) -- se devolvía el caché corto tal cual,
+    sin avisar, y el backtest terminaba con un rango de fechas silenciosamente
+    truncado. Por eso se guarda cuántos años se pidieron la última vez que se
+    bajó el historial COMPLETO de cada ticker (`{ticker}.years.json`, junto al
+    parquet), y con `force=False` solo se confía en el caché si además cubre
+    por lo menos los años pedidos ahora -- si no, se re-baja completo.
     """
     period = f"{years}y"
+    target_start = pd.Timestamp.now(tz="UTC").tz_localize(None) - pd.Timedelta(days=years * 365)
     out: dict[str, pd.DataFrame] = {}
     need_full: list[str] = []
     need_incremental: list[tuple[str, pd.DataFrame, pd.Timestamp]] = []
@@ -129,7 +163,13 @@ def download_prices(tickers: Iterable[str], years: int = 11, force: bool = False
             continue
         existing = pd.read_parquet(cache_file)
         if not force:
-            out[ticker] = existing
+            covers_requested_range = not existing.empty and existing.index.min() <= target_start
+            years_covered = _read_years_covered(ticker)
+            already_tried_enough = years_covered is not None and years_covered >= years
+            if covers_requested_range or already_tried_enough:
+                out[ticker] = existing
+                continue
+            need_full.append(ticker)
             continue
         if existing.empty:
             need_full.append(ticker)
@@ -154,6 +194,7 @@ def download_prices(tickers: Iterable[str], years: int = 11, force: bool = False
                         print(f"[WARN] sin datos para {ticker}, se omite")
                         continue
                     final_df = new_df
+                    _write_years_covered(ticker, years)
                 else:
                     if new_df.empty:
                         final_df = existing  # sin datos nuevos (fin de semana, feriado) -- usa lo que ya había

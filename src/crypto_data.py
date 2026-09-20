@@ -7,6 +7,7 @@ cada respuesta a 1000 velas.
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -93,6 +94,26 @@ def download_klines(symbol: str, years: int = 11, interval: str = "1d",
     return out
 
 
+def _years_meta_file(symbol: str) -> pathlib.Path:
+    return CACHE_DIR / f"{symbol}.years.json"
+
+
+def _read_years_covered(symbol: str) -> int | None:
+    """`None` si no hay metadata (caché de antes de este fix, o nunca escrita) --
+    tratar como cobertura desconocida, no como 0."""
+    meta_file = _years_meta_file(symbol)
+    if not meta_file.exists():
+        return None
+    try:
+        return json.loads(meta_file.read_text()).get("years")
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _write_years_covered(symbol: str, years: int) -> None:
+    _years_meta_file(symbol).write_text(json.dumps({"years": years}))
+
+
 def download_prices(symbols: Iterable[str], years: int = 11, force: bool = False,
                      max_workers: int = 5, incremental_overlap_days: int = 3) -> dict[str, pd.DataFrame]:
     """Igual que `src.data.download_prices`: caché en disco si `force=False`; si
@@ -100,7 +121,21 @@ def download_prices(symbols: Iterable[str], years: int = 11, force: bool = False
     velas desde el último día cacheado (con `incremental_overlap_days` de
     margen), pegadas al caché existente. Lo que sí hace falta bajar (completo o
     incremental) se pide en paralelo (`max_workers` hilos, moderado a propósito:
-    cada símbolo ya pagina internamente con cortesía de rate-limit)."""
+    cada símbolo ya pagina internamente con cortesía de rate-limit).
+
+    IMPORTANTE (bug real que ya pasó): con `force=False`, si el caché en disco
+    llegaba a existir con MENOS años de los que se piden ahora -- típicamente
+    porque antes se corrió `run_crypto_live_once.py` (pide `years=2`, solo
+    necesita datos recientes) antes que `run_crypto_backtest.py` (pide
+    `years=11`) -- se devolvía el caché corto tal cual, sin avisar, y el
+    backtest terminaba con un rango de fechas silenciosamente truncado (en un
+    caso real, walk-forward se quedó sin folds y tiró `IndexError`). Por eso
+    se guarda cuántos años se pidieron la última vez que se bajó el historial
+    COMPLETO de cada símbolo (`{symbol}.years.json`, junto al parquet), y con
+    `force=False` solo se confía en el caché si además cubre por lo menos los
+    años pedidos ahora -- si no, se re-baja completo."""
+    target_start = pd.Timestamp.now(tz="UTC").tz_localize(None) - pd.Timedelta(days=years * 365)
+
     out: dict[str, pd.DataFrame] = {}
     need_full: list[str] = []
     need_incremental: list[tuple[str, pd.DataFrame, pd.Timestamp]] = []
@@ -112,7 +147,13 @@ def download_prices(symbols: Iterable[str], years: int = 11, force: bool = False
             continue
         existing = pd.read_parquet(cache_file)
         if not force:
-            out[symbol] = existing
+            covers_requested_range = not existing.empty and existing.index.min() <= target_start
+            years_covered = _read_years_covered(symbol)
+            already_tried_enough = years_covered is not None and years_covered >= years
+            if covers_requested_range or already_tried_enough:
+                out[symbol] = existing
+                continue
+            need_full.append(symbol)
             continue
         if existing.empty:
             need_full.append(symbol)
@@ -137,6 +178,7 @@ def download_prices(symbols: Iterable[str], years: int = 11, force: bool = False
                         print(f"[WARN] sin datos para {symbol}, se omite")
                         continue
                     final_df = new_df
+                    _write_years_covered(symbol, years)
                 else:
                     if new_df.empty:
                         final_df = existing
