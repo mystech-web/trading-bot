@@ -133,6 +133,13 @@ def run(args, logger) -> None:
 
     target_weights, as_of = compute_target_weights(close, universe, live_params)
     target_weights = {t: w for t, w in target_weights.items() if abs(w) > 1e-6}
+    # USDT (universe["quote_currency"]) es la moneda de cotización, no un símbolo operable --
+    # sweep_idle_cash/regime_filter le asignan peso para representar "no invertido", pero no
+    # existe un par USDTUSDT en Binance/Bitso. Sin este filtro, rebalance_to_weights intentaba
+    # generar una orden de compra/venta de USDT contra sí mismo (ver BinanceBroker, que además
+    # ya trata quote_currency como cash puro en get_equity/get_current_positions -- este era el
+    # único lugar donde no se respetaba esa misma regla).
+    target_weights.pop(universe["quote_currency"], None)
     reference_prices = close.loc[as_of].to_dict()
     logger.info(f"Señal calculada con cierre de: {as_of.date()} (UTC)")
 

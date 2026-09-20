@@ -109,6 +109,25 @@ def test_rebalance_respects_min_notional_and_rounds_correctly():
     print(f"  guardia de min_notional OK: {small['error']}")
 
 
+def test_rebalance_skips_quote_currency_even_if_passed_in_weights():
+    """Regresión de un bug real: `scripts/run_crypto_live_once.py` le pasaba a
+    `rebalance_to_weights` un peso para 'USDT' (la moneda de cotización --
+    sweep_idle_cash/regime_filter le asignan peso para representar "no
+    invertido"), y el broker intentaba generar una orden de compra/venta de
+    USDT contra sí mismo (no existe el par USDTUSDT) -- en producción esto
+    hizo explotar `_get_filters` con `'NoneType' object is not subscriptable`.
+    El fix real está en run_crypto_live_once.py (nunca debe llegar hasta acá),
+    pero este test blinda BinanceBroker directamente por si algún otro caller
+    lo hiciera en el futuro."""
+    broker = _make_broker({"USDT": 1000.0}, DEFAULT_FILTERS)
+    orders = broker.rebalance_to_weights(
+        {"USDT": 0.8, "BTCUSDT": 0.2}, {"USDT": 1.0, "BTCUSDT": 50_000.0}, dry_run=True,
+    )
+    tickers = [o["ticker"] for o in orders]
+    assert "USDT" not in tickers, f"USDT (quote_currency) no debería generar una orden -- órdenes: {orders}"
+    print(f"  USDT correctamente excluido de las órdenes generadas (tickers: {tickers})")
+
+
 def test_dry_run_does_not_submit_orders():
     broker = _make_broker({"USDT": 1000.0}, DEFAULT_FILTERS)
     broker.rebalance_to_weights({"BTCUSDT": 0.5}, {"BTCUSDT": 50_000.0}, dry_run=True)
@@ -134,8 +153,9 @@ def test_order_that_never_fills_gets_canceled():
     print("  verificación de fills OK: una orden que nunca se llena se CANCELA al agotar el timeout")
 
 
-def test_run_crypto_live_once_with_virtual_broker(tmp_path, monkeypatch):
-    import types
+def _setup_synthetic_crypto_run(monkeypatch, tmp_path):
+    """Deja rcl (scripts/run_crypto_live_once) listo para correr run() de punta
+    a punta con datos sintéticos, sin red -- usado por varios tests de este archivo."""
     import scripts.run_crypto_live_once as rcl
 
     rng = np.random.default_rng(11)
@@ -175,6 +195,12 @@ def test_run_crypto_live_once_with_virtual_broker(tmp_path, monkeypatch):
         s: synthetic[s] for s in symbols if s in synthetic
     })
     monkeypatch.setattr(rcl, "REPORTS_DIR", tmp_path)
+    return rcl, universe
+
+
+def test_run_crypto_live_once_with_virtual_broker(tmp_path, monkeypatch):
+    import types
+    rcl, universe = _setup_synthetic_crypto_run(monkeypatch, tmp_path)
 
     args = types.SimpleNamespace(broker="virtual", starting_cash=1000.0, execute=True, refresh_data=True)
     logger = rcl.get_logger("crypto-live-smoke-test")
@@ -191,38 +217,82 @@ def test_run_crypto_live_once_with_virtual_broker(tmp_path, monkeypatch):
           f"(en <reports_crypto>/virtual/)")
 
 
-def main():
-    print("[1/5] Probando equity/posiciones marcadas a mercado...")
-    test_equity_and_positions_marked_to_market()
+def test_run_never_passes_quote_currency_to_broker(tmp_path, monkeypatch):
+    """Regresión del bug real (ver test_rebalance_skips_quote_currency_even_if_passed_in_weights):
+    espía VirtualBroker.rebalance_to_weights para confirmar que run(), con
+    datos que SÍ generan sweep hacia USDT (cash_sweep_enabled por default),
+    nunca se lo pasa al broker -- el filtro real está en run_crypto_live_once.py,
+    antes de llamar a cualquier broker."""
+    import types
+    from src.live.virtual_broker import VirtualBroker
+    rcl, universe = _setup_synthetic_crypto_run(monkeypatch, tmp_path)
 
-    print("\n[2/5] Probando redondeo a filtros del exchange (step_size, min_notional)...")
-    test_rebalance_respects_min_notional_and_rounds_correctly()
+    captured = {}
+    orig = VirtualBroker.rebalance_to_weights
 
-    print("\n[3/5] Probando dry_run vs ejecución real (con cliente falso)...")
-    test_dry_run_does_not_submit_orders()
+    def spy(self, target_weights, *a, **kw):
+        captured["target_weights"] = dict(target_weights)
+        return orig(self, target_weights, *a, **kw)
 
-    print("\n[4/5] Probando que una orden que nunca se llena se cancela al agotar el timeout...")
-    test_order_that_never_fills_gets_canceled()
+    monkeypatch.setattr(VirtualBroker, "rebalance_to_weights", spy)
 
-    print("\n[5/5] Probando run() completo de run_crypto_live_once.py con broker virtual...")
+    args = types.SimpleNamespace(broker="virtual", starting_cash=1000.0, execute=True, refresh_data=True)
+    logger = rcl.get_logger("crypto-live-smoke-test-2")
+    rcl.run(args, logger)
 
-    class _MonkeyPatch:
-        def __init__(self):
-            self._orig = []
+    assert "target_weights" in captured, "rebalance_to_weights no fue llamado -- el test no ejercitó nada"
+    assert universe["quote_currency"] not in captured["target_weights"], (
+        f"{universe['quote_currency']} (moneda de cotización) no debería llegar a rebalance_to_weights: "
+        f"{captured['target_weights']}"
+    )
+    print(f"  {universe['quote_currency']} correctamente excluido de target_weights antes de llegar al broker "
+          f"(pesos pasados: {sorted(captured['target_weights'])})")
 
-        def setattr(self, obj, name, value):
-            self._orig.append((obj, name, getattr(obj, name)))
+
+class _MonkeyPatch:
+    def __init__(self):
+        self._orig = []
+
+    def setattr(self, obj, name, value):
+        self._orig.append((obj, name, getattr(obj, name)))
+        setattr(obj, name, value)
+
+    def undo(self):
+        for obj, name, value in reversed(self._orig):
             setattr(obj, name, value)
 
-        def undo(self):
-            for obj, name, value in reversed(self._orig):
-                setattr(obj, name, value)
+
+def main():
+    print("[1/7] Probando equity/posiciones marcadas a mercado...")
+    test_equity_and_positions_marked_to_market()
+
+    print("\n[2/7] Probando redondeo a filtros del exchange (step_size, min_notional)...")
+    test_rebalance_respects_min_notional_and_rounds_correctly()
+
+    print("\n[3/7] Probando que USDT (quote_currency) nunca genera una orden, aunque se le pase peso...")
+    test_rebalance_skips_quote_currency_even_if_passed_in_weights()
+
+    print("\n[4/7] Probando dry_run vs ejecución real (con cliente falso)...")
+    test_dry_run_does_not_submit_orders()
+
+    print("\n[5/7] Probando que una orden que nunca se llena se cancela al agotar el timeout...")
+    test_order_that_never_fills_gets_canceled()
 
     import tempfile
+
+    print("\n[6/7] Probando run() completo de run_crypto_live_once.py con broker virtual...")
     with tempfile.TemporaryDirectory() as tmp:
         mp = _MonkeyPatch()
         try:
             test_run_crypto_live_once_with_virtual_broker(pathlib.Path(tmp), mp)
+        finally:
+            mp.undo()
+
+    print("\n[7/7] Probando que run() nunca le pasa la moneda de cotización al broker...")
+    with tempfile.TemporaryDirectory() as tmp:
+        mp = _MonkeyPatch()
+        try:
+            test_run_never_passes_quote_currency_to_broker(pathlib.Path(tmp), mp)
         finally:
             mp.undo()
 

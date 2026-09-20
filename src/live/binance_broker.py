@@ -151,6 +151,8 @@ class BinanceBroker:
 
         orders = []
         for symbol in sorted(all_symbols):
+            if symbol == self.quote_currency:
+                continue  # cash puro (ver get_equity/get_current_positions) -- no existe un par contra sí mismo
             price = reference_prices.get(symbol)
             if not price or price <= 0:
                 continue
