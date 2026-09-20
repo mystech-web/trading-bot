@@ -3,7 +3,10 @@
 # (BTC/ETH/altcoins contra USDT, ver config/crypto_universe.yaml):
 #   1) Diaria, TODOS LOS DÍAS (a diferencia del bot de acciones, cripto cotiza
 #      365 días/año -- no hay "días hábiles" ni horario de mercado que respetar).
-#      Por defecto en modo SIMULACIÓN (dry-run) -- no manda órdenes reales.
+#      Usa el broker VIRTUAL -- un portafolio 100% ficticio ($1000 simulados
+#      por defecto), sin ninguna cuenta ni API key real. Como no toca ningún
+#      exchange real, corre 100% sola desde el día uno (manda "órdenes"
+#      ficticias automáticamente, no se queda en dry-run).
 #   2) Semanal (sábados 8:15am): re-corre el backtest cripto completo para
 #      refrescar el dashboard y las bandas de alerta.
 #
@@ -21,12 +24,12 @@ fi
 PLIST_DAILY="$HOME/Library/LaunchAgents/com.tradingbot.crypto.daily.plist"
 PLIST_WEEKLY="$HOME/Library/LaunchAgents/com.tradingbot.crypto.weekly.plist"
 
-echo "=== Instalar automatización 24/7 del módulo cripto (BTC/USDT y demás) ==="
+echo "=== Instalar automatización 24/7 del módulo cripto (broker VIRTUAL, dinero ficticio) ==="
 echo
 echo "Esto va a instalar 2 tareas programadas:"
-echo "  1) Diaria, TODOS los días (cripto no cierra -- sin restricción de día hábil)."
-echo "     Por defecto en modo SIMULACIÓN -- NO manda órdenes reales todavía, y usa"
-echo "     el broker VIRTUAL (\$1000 simulados, sin API key)."
+echo "  1) Diaria, TODOS los días (cripto no cierra): calcula la señal del día y la"
+echo "     aplica a un portafolio FICTICIO de \$1000 (sin cuenta ni API key real)."
+echo "     Corre 100% sola -- no necesitas hacer nada más para que se actualice cada día."
 echo "  2) Semanal (sábados 8:15am): re-corre el backtest cripto completo."
 echo
 echo "Nota sobre el horario: a diferencia de acciones, cripto no tiene 'apertura de"
@@ -48,6 +51,11 @@ cat > "$PLIST_DAILY" <<EOF
   <array>
     <string>$PROJECT_DIR/venv/bin/python</string>
     <string>$PROJECT_DIR/scripts/run_crypto_live_once.py</string>
+    <string>--broker</string>
+    <string>virtual</string>
+    <string>--starting-cash</string>
+    <string>1000</string>
+    <string>--execute</string>
   </array>
   <key>WorkingDirectory</key><string>$PROJECT_DIR</string>
   <key>StartCalendarInterval</key>
@@ -84,18 +92,17 @@ launchctl unload "$PLIST_WEEKLY" 2>/dev/null || true
 launchctl load "$PLIST_WEEKLY"
 
 echo
-echo "Listo. Tareas instaladas en modo SIMULACIÓN (broker virtual, no se envía dinero"
-echo "real ni siquiera en paper trading de un exchange real)."
+echo "Listo. La tarea diaria ya corre 100% sola con el broker VIRTUAL (\$1000 ficticios,"
+echo "sin ninguna cuenta real) -- revisa el progreso con 'streamlit run dashboard.py'"
+echo "(perfil 'Cripto') o en $PROJECT_DIR/reports_crypto/virtual/."
 echo
-echo "Para pasar a paper trading real (Binance testnet), edita este archivo:"
+echo "Cuando quieras pasar al testnet real de Binance (con las claves que ya generaste,"
+echo "ver .env), edita este archivo:"
 echo "  $PLIST_DAILY"
-echo "y agrega, dentro del <array> de ProgramArguments (después de la línea"
-echo "run_crypto_live_once.py), estas dos líneas:"
-echo "  <string>--broker</string>"
-echo "  <string>binance</string>"
-echo "y esta para que además envíe las órdenes (si no, se queda en dry-run):"
-echo "  <string>--execute</string>"
-echo "(requiere BINANCE_API_KEY/BINANCE_SECRET_KEY de testnet en tu .env -- ver README)."
+echo "y reemplaza, dentro del <array> de ProgramArguments, las 4 líneas"
+echo "  --broker / virtual / --starting-cash / 1000"
+echo "por"
+echo "  --broker / binance"
 echo "Luego: launchctl unload $PLIST_DAILY && launchctl load $PLIST_DAILY"
 echo
 echo "Para desinstalar ambas tareas más adelante:"

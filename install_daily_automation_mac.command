@@ -1,7 +1,12 @@
 #!/bin/bash
 # Instala 2 tareas programadas en tu Mac usando launchd:
 #   1) Diaria (días hábiles, 9:35am hora de Nueva York): calcula señales del
-#      bot. Por defecto en modo SIMULACIÓN (dry-run) -- no manda órdenes reales.
+#      bot y las "ejecuta" contra el BROKER VIRTUAL -- un portafolio 100%
+#      ficticio ($1000 simulados por defecto, ver --starting-cash abajo), sin
+#      ninguna cuenta ni API key real de por medio. Como no toca ningún
+#      exchange/broker real, no hay ningún riesgo en dejarlo actualizar solo
+#      desde el día uno -- por eso, a diferencia de un broker real, esta tarea
+#      SÍ manda "órdenes" (ficticias) automáticamente, no se queda en dry-run.
 #   2) Semanal (sábados 8am): re-corre el backtest completo para refrescar el
 #      dashboard y las bandas de alerta.
 #
@@ -19,11 +24,12 @@ fi
 PLIST_DAILY="$HOME/Library/LaunchAgents/com.tradingbot.daily.plist"
 PLIST_WEEKLY="$HOME/Library/LaunchAgents/com.tradingbot.weekly.plist"
 
-echo "=== Instalar automatización diaria/semanal del bot ==="
+echo "=== Instalar automatización diaria/semanal del bot (broker VIRTUAL, dinero ficticio) ==="
 echo
 echo "Esto va a instalar 2 tareas programadas:"
-echo "  1) Diaria (días hábiles, 9:35am hora de Nueva York): calcula la señal del día."
-echo "     Por defecto en modo SIMULACIÓN -- NO manda órdenes reales todavía."
+echo "  1) Diaria (días hábiles, 9:35am hora de Nueva York): calcula la señal del día"
+echo "     y la aplica a un portafolio FICTICIO de \$1000 (sin cuenta ni API key real)."
+echo "     Corre 100% sola -- no necesitas hacer nada más para que se actualice cada día."
 echo "  2) Semanal (sábados 8am): re-corre el backtest completo (perfil conservador)."
 echo
 echo "Nota: '9:35am hora de Nueva York' es la hora del MERCADO -- si tu Mac está en"
@@ -44,6 +50,11 @@ cat > "$PLIST_DAILY" <<EOF
   <array>
     <string>$PROJECT_DIR/venv/bin/python</string>
     <string>$PROJECT_DIR/scripts/run_live_once.py</string>
+    <string>--broker</string>
+    <string>virtual</string>
+    <string>--starting-cash</string>
+    <string>1000</string>
+    <string>--execute</string>
   </array>
   <key>WorkingDirectory</key><string>$PROJECT_DIR</string>
   <key>StartCalendarInterval</key>
@@ -86,12 +97,19 @@ launchctl unload "$PLIST_WEEKLY" 2>/dev/null || true
 launchctl load "$PLIST_WEEKLY"
 
 echo
-echo "Listo. Tareas instaladas en modo SIMULACIÓN (no se envía dinero, ni siquiera en paper)."
+echo "Listo. La tarea diaria ya corre 100% sola con el broker VIRTUAL (\$1000 ficticios,"
+echo "sin ninguna cuenta real) -- revisa el progreso con 'streamlit run dashboard.py' o"
+echo "en $PROJECT_DIR/reports/live_cron.log."
 echo
-echo "Para activar las órdenes reales de paper trading, edita este archivo:"
+echo "Cuando quieras pasar a paper trading real contra Alpaca (con tu cuenta y API key,"
+echo "ver .env), edita este archivo:"
 echo "  $PLIST_DAILY"
-echo "y agrega una línea <string>--execute</string> dentro del <array> de ProgramArguments"
-echo "(justo después de la línea que dice run_live_once.py), luego corre:"
+echo "y reemplaza, dentro del <array> de ProgramArguments, las 4 líneas"
+echo "  --broker / virtual / --starting-cash / 1000"
+echo "por"
+echo "  --broker / alpaca"
+echo "(deja --execute si quieres que mande órdenes reales de paper trading; quítalo si"
+echo "prefieres ver primero qué haría, en dry-run). Luego corre:"
 echo "  launchctl unload $PLIST_DAILY && launchctl load $PLIST_DAILY"
 echo
 echo "Para desinstalar ambas tareas más adelante:"

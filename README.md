@@ -566,11 +566,18 @@ Instala DOS tareas programadas: una diaria (días hábiles, 9:35am hora de Nueva
 (sábados) que re-corre el backtest completo para refrescar el dashboard y las bandas
 de alerta.
 
-**Por seguridad, quedan instaladas en modo SIMULACIÓN (dry-run) por defecto** -- no
-envían ninguna orden real, ni siquiera en paper trading, hasta que tú edites la tarea
-manualmente y agregues `--execute` (el instalador te dice exactamente cómo, al final).
-Esto es intencional: automatizar el envío de órdenes reales debe ser una decisión
-explícita tuya, no algo que un script active solo.
+**La tarea diaria usa el broker VIRTUAL por defecto** -- un portafolio 100% ficticio
+($1000 simulados, editable con `--starting-cash`), sin ninguna cuenta ni API key real.
+Como no toca ningún broker/exchange real, la tarea SÍ manda "órdenes" (ficticias)
+automáticamente desde el primer día -- no hay ningún riesgo real en dejarla así, y es
+la forma más simple de responder "¿cómo le va de verdad a esto, semana a semana?" sin
+tener que configurar nada más. Revisa el progreso con `streamlit run dashboard.py` o
+en `reports/live_cron.log`.
+
+**Solo cuando decidas pasar a paper trading real contra Alpaca** (con tu cuenta y API
+key, ver `.env`) hay que editar la tarea a mano -- el instalador te dice exactamente
+cómo, al final. Esto es intencional: automatizar el envío de órdenes contra un broker
+real debe ser una decisión explícita tuya, no algo que un script active solo.
 
 Para desinstalar, cada script imprime el comando exacto al final de su instalación.
 
@@ -798,9 +805,11 @@ Instala DOS tareas programadas, igual que el instalador del bot de acciones pero
 restricción de día hábil (cripto cotiza 365 días al año, no hay fin de semana): una
 diaria (00:10, hora local -- ajustable) que calcula la señal y rebalancea, y una
 semanal (sábados 8:15am) que re-corre `run_crypto_backtest.py` para refrescar el
-dashboard y las bandas de alerta. **Por seguridad, quedan instaladas en modo
-SIMULACIÓN (broker virtual, dry-run) por defecto** -- el instalador explica al final
-exactamente qué agregar para pasar a paper trading real contra Binance testnet.
+dashboard y las bandas de alerta. **La tarea diaria usa el broker VIRTUAL por
+defecto** -- portafolio 100% ficticio de \$1000, sin ninguna cuenta ni API key real --
+así que corre 100% sola desde el día uno, sin ningún riesgo real. El instalador
+explica al final exactamente qué editar para pasar al testnet real de Binance cuando
+quieras.
 
 #### Por qué una corrida diaria alcanza (y qué significa "24/7" acá)
 
