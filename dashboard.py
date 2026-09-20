@@ -546,6 +546,21 @@ with tab_live:
     live_state = load_state(tracking_dir) if tracking_dir.exists() else None
     live_log = load_equity_log(tracking_dir) if tracking_dir.exists() else None
 
+    if live_log is not None and len(live_log):
+        _summary_log = live_log.sort_values("date")
+        initial_capital = float(_summary_log["equity"].iloc[0])
+        current_balance = float(_summary_log["equity"].iloc[-1])
+        gain_loss = current_balance - initial_capital
+        pct_return = (gain_loss / initial_capital * 100) if initial_capital else 0.0
+        days_tracked = (_summary_log["date"].iloc[-1] - _summary_log["date"].iloc[0]).days
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Capital inicial", f"${initial_capital:,.2f}")
+        c2.metric("Saldo actual", f"${current_balance:,.2f}", f"{gain_loss:+,.2f} $")
+        c3.metric("Rendimiento", f"{pct_return:+.2f}%")
+        c4.metric("Días registrados", f"{days_tracked}")
+        st.divider()
+
     if live_state and live_state.get("peak_equity") is not None:
         c1, c2 = st.columns(2)
         c1.metric("Pico de equity registrado", f"${live_state.get('peak_equity', 0):,.2f}")
