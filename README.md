@@ -398,6 +398,11 @@ ni el bot en vivo -- solo sirven para comparar `summary.csv` entre corridas):
   y subir el tope a 1.3 (apalancamiento moderado, real en vivo) cruzó el objetivo de
   0.5-2%/mes -- por eso quedó así en el conservador. Usa este flag con un valor distinto
   (ej. 1.0) para comparar sin tocar el config.
+  **Al evaluar el resultado, revisa `monte_carlo_dynamic_alloc_vol_target.json` y las
+  columnas `ensemble_dynamic_alloc_vol_target_*` de `stress_test_oos.csv`, NO
+  `monte_carlo.json` ni la columna `ensemble_*` a secas** -- esos dos describen la
+  mezcla FIJA (`ENSEMBLE_OOS_walkforward`), que este flag nunca toca (un error real
+  que casi lleva a decidir sobre apalancamiento mirando el reporte equivocado).
 
 El walk-forward corre en paralelo por defecto (`--jobs`, ver la sección "Rendimiento"
 más abajo) -- en una Mac de 8 núcleos esto corta el tiempo de la corrida varias veces
@@ -419,11 +424,19 @@ para el perfil conservador, `reports_aggressive/` para el agresivo):
 - `reports/param_stability_<estrategia>.csv` — qué parámetro ganó en cada fold del
   walk-forward. Si salta de un extremo a otro, ese "óptimo" es ruido, no una ventaja real.
 - `reports/monte_carlo.json` + `monte_carlo_hist.png` — 1000 escenarios simulados
-  (block bootstrap) del ensamble OOS: percentiles del retorno mensual promedio y
-  probabilidad de caer en el rango objetivo 0.5%-2%. Este archivo también lo usa
-  `run_live_once.py` para detectar si el desempeño real se desvía de lo esperado.
+  (block bootstrap) del ensamble OOS de mezcla **fija** (`ENSEMBLE_OOS_walkforward`):
+  percentiles del retorno mensual promedio y probabilidad de caer en el rango
+  objetivo 0.5%-2%. Este archivo también lo usa `run_live_once.py` para detectar si
+  el desempeño real se desvía de lo esperado.
+- `reports/monte_carlo_dynamic_alloc.json` / `monte_carlo_dynamic_alloc_vol_target.json`
+  — el mismo Monte Carlo, pero para las otras dos variantes del ensamble
+  (`ENSEMBLE_OOS_dynamic_alloc` / `..._vol_target`). Antes no existían -- si estás
+  evaluando `--vol-target-max-exposure` (o cualquier decisión sobre esas dos
+  variantes), usa estos archivos, no `monte_carlo.json`: ese solo describe la mezcla
+  fija y NUNCA cambia con ese flag, aunque el número que te importa sea otro.
 - `reports/stress_test_insample.csv` / `stress_test_oos.csv` — cómo le fue a cada
-  estrategia en crashes conocidos (Q4-2018, COVID-2020, bear 2022).
+  estrategia, y a las 3 variantes del ensamble, en crashes conocidos (Q4-2018,
+  COVID-2020, bear 2022).
 - `reports/data_quality_outliers.csv` (solo si se detectó alguno) — precios que
   `src/data_quality.py` identificó como probables errores de datos y limpió antes
   de calcular cualquier señal (ver `src/data_quality.py` arriba).
@@ -737,6 +750,9 @@ subir esto de verdad**, ten en cuenta que apalancar cripto es una categoría de 
 bastante más seria que apalancar el ensamble de acciones -- compara el `max_drawdown`
 resultante contra el de `benchmark_BTCUSDT_buy_hold` en el mismo reporte (históricamente
 arriba de -70%) antes de considerar llevarlo a `config/crypto_live_params.yaml`.
+**Para esa comparación usa `monte_carlo_dynamic_alloc_vol_target.json` y las columnas
+`ensemble_dynamic_alloc_vol_target_*` de `stress_test_oos.csv`** -- `monte_carlo.json`
+y la columna `ensemble_*` a secas describen la mezcla FIJA, que este flag no toca.
 
 Genera el mismo tipo de reporte honesto que el bot de acciones (walk-forward, Monte
 Carlo, estabilidad de parámetros) pero con stress test contra crashes **cripto**

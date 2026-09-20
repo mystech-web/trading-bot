@@ -448,6 +448,20 @@ def main():
     plt.savefig(REPORTS_DIR / "monte_carlo_hist.png", dpi=130)
     plt.close()
 
+    # `monte_carlo.json` de arriba es SOLO del ensamble de mezcla FIJA
+    # (ENSEMBLE_OOS_walkforward) -- para decidir sobre `max_gross_exposure`
+    # (ver --vol-target-max-exposure) hace falta el Monte Carlo de las otras
+    # dos variantes, que antes no se generaba (un backtest real casi llevó a
+    # decidir sobre apalancamiento mirando el Monte Carlo del ensamble
+    # equivocado). Mismos parámetros, mismo bootstrap, series distintas.
+    mc_dynamic = monte_carlo_summary(ensemble_oos_dynamic, n_sims=1000, block_size=21, seed=7)
+    with open(REPORTS_DIR / "monte_carlo_dynamic_alloc.json", "w") as f:
+        json.dump(summary_for_json(mc_dynamic), f, indent=2)
+
+    mc_vol_target = monte_carlo_summary(ensemble_oos_vol_target, n_sims=1000, block_size=21, seed=7)
+    with open(REPORTS_DIR / "monte_carlo_dynamic_alloc_vol_target.json", "w") as f:
+        json.dump(summary_for_json(mc_vol_target), f, indent=2)
+
     # ---------- Stress test contra crashes conocidos ----------
     print("\n" + "=" * 100)
     print("STRESS TEST: comportamiento en crashes conocidos")
@@ -474,7 +488,13 @@ def main():
     oos_index = ensemble_oos.index
     covered_oos = periods_covered(oos_index, CRISIS_PERIODS)
     if covered_oos:
+        # Incluye las 3 variantes del ensamble (no solo la de mezcla fija) --
+        # ver la nota sobre monte_carlo_dynamic_alloc*.json más arriba: decidir
+        # sobre max_gross_exposure sin ver el stress test de la variante real
+        # que se está considerando es exactamente el error que se quiere evitar.
         oos_stress_universe = {**oos_returns, "ensemble": ensemble_oos,
+                                "ensemble_dynamic_alloc": ensemble_oos_dynamic,
+                                "ensemble_dynamic_alloc_vol_target": ensemble_oos_vol_target,
                                 f"benchmark_{benchmark}": bench_returns}
         print("\n[OUT-OF-SAMPLE walk-forward -- solo períodos cubiertos por el rango de test de los folds]")
         stress_oos = run_stress_test(oos_stress_universe, covered_oos)
@@ -503,7 +523,8 @@ def main():
     print("  summary.csv, equity_oos.png, ensemble_monthly_returns.csv, oos_returns.csv")
     print("  ensemble_dynamic_allocations.json (reparto de capital entre estrategias, fold a fold)")
     print("  param_stability_<estrategia>.csv (una por estrategia)")
-    print("  monte_carlo.json, monte_carlo_hist.png")
+    print("  monte_carlo.json, monte_carlo_hist.png (ensamble de mezcla FIJA)")
+    print("  monte_carlo_dynamic_alloc.json, monte_carlo_dynamic_alloc_vol_target.json (las otras 2 variantes)")
     print("  stress_test_insample.csv" + (", stress_test_oos.csv" if covered_oos else ""))
     print("\nCorre 'streamlit run dashboard.py' para ver todo esto en un dashboard interactivo.")
 

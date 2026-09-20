@@ -60,6 +60,7 @@ def _run_profile(rb, profile: str, reports_dir: pathlib.Path):
     expected_files = [
         "summary.csv", "equity_oos.png", "ensemble_monthly_returns.csv", "oos_returns.csv",
         "monte_carlo.json", "monte_carlo_hist.png",
+        "monte_carlo_dynamic_alloc.json", "monte_carlo_dynamic_alloc_vol_target.json",
         "param_stability_momentum.csv", "param_stability_mean_reversion.csv",
         "param_stability_sector_rotation.csv", "param_stability_scores.json", "stress_test_insample.csv",
         "param_drift.json", "ensemble_dynamic_allocations.json",

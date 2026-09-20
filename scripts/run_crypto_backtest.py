@@ -359,6 +359,20 @@ def main():
     plt.savefig(REPORTS_DIR / "monte_carlo_hist.png", dpi=130)
     plt.close()
 
+    # `monte_carlo.json` de arriba es SOLO del ensamble de mezcla FIJA -- ver la
+    # misma nota en scripts/run_backtest.py (bot de acciones): decidir sobre
+    # --vol-target-max-exposure sin el Monte Carlo de la variante real que se
+    # está probando es el error que esto corrige.
+    mc_dynamic = monte_carlo_summary(ensemble_oos_dynamic, n_sims=1000, block_size=30, seed=7,
+                                      periods_per_year=periods_per_year)
+    with open(REPORTS_DIR / "monte_carlo_dynamic_alloc.json", "w") as f:
+        json.dump(summary_for_json(mc_dynamic), f, indent=2)
+
+    mc_vol_target = monte_carlo_summary(ensemble_oos_vol_target, n_sims=1000, block_size=30, seed=7,
+                                         periods_per_year=periods_per_year)
+    with open(REPORTS_DIR / "monte_carlo_dynamic_alloc_vol_target.json", "w") as f:
+        json.dump(summary_for_json(mc_vol_target), f, indent=2)
+
     # ---------- Stress test ----------
     print("\n" + "=" * 100)
     print("STRESS TEST: comportamiento en crashes cripto conocidos")
@@ -383,7 +397,10 @@ def main():
     oos_index = ensemble_oos.index
     covered_oos = periods_covered(oos_index, CRYPTO_CRISIS_PERIODS)
     if covered_oos:
-        oos_stress_universe = {**oos_returns, "ensemble": ensemble_oos, f"benchmark_{benchmark}": bench_returns}
+        oos_stress_universe = {**oos_returns, "ensemble": ensemble_oos,
+                                "ensemble_dynamic_alloc": ensemble_oos_dynamic,
+                                "ensemble_dynamic_alloc_vol_target": ensemble_oos_vol_target,
+                                f"benchmark_{benchmark}": bench_returns}
         print("\n[OUT-OF-SAMPLE walk-forward]")
         stress_oos = run_stress_test(oos_stress_universe, covered_oos)
         print(stress_oos.to_string(index=False))
